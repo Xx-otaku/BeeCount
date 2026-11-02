@@ -103,9 +103,30 @@ class _BeeAppState extends ConsumerState<BeeApp>
     _refreshLedgersStatusInBackground();
     // 延迟监听 AppLink，确保 context 可用
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _setupAppLinkListener();
       _setupQuickActions();
+      _drainPendingDeepLink(trigger: 'startup');
     });
+  }
+
+  /// 普通冷启动复用现有 AI 页面；显式导航优先，后台恢复不重复跳转。
+  void _openStartupAiChat() {
+    if (!mounted ||
+        ref.read(startupNavigationHandledProvider) ||
+        ref.read(appInitStateProvider) != AppInitState.ready ||
+        ref.read(shouldShowWelcomeProvider) ||
+        ref.read(isAppLockedProvider) ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+
+    ref.read(startupNavigationHandledProvider.notifier).state = true;
+    // 已经由其他入口打开页面时，保留该入口的目标。
+    if (ModalRoute.of(context)?.isCurrent != true) return;
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(builder: (_) => const AIChatPage()),
+    );
   }
 
   /// 设置快捷操作
@@ -465,13 +486,17 @@ class _BeeAppState extends ConsumerState<BeeApp>
     }
     if (!mounted) return;
     final raw = prefs.getString(_kPendingDeepLink);
-    if (raw == null) return;
+    if (raw == null) {
+      _openStartupAiChat();
+      return;
+    }
 
     Map<String, dynamic> data;
     try {
       data = jsonDecode(raw) as Map<String, dynamic>;
     } catch (_) {
       await prefs.remove(_kPendingDeepLink);
+      _openStartupAiChat();
       return;
     }
     final ts = (data['ts'] as num?)?.toInt() ?? 0;
@@ -479,6 +504,7 @@ class _BeeAppState extends ConsumerState<BeeApp>
     // 过期(>20s)或时间异常 → 丢弃,避免历史深链在普通启动时误触发
     if (ageMs < 0 || ageMs > 20000) {
       await prefs.remove(_kPendingDeepLink);
+      _openStartupAiChat();
       return;
     }
     // 同一条只认领一次(listener / resumed 多次触发去重)
@@ -494,6 +520,7 @@ class _BeeAppState extends ConsumerState<BeeApp>
     }
     if (action == null) {
       await prefs.remove(_kPendingDeepLink);
+      _openStartupAiChat();
       return;
     }
 
@@ -521,6 +548,7 @@ class _BeeAppState extends ConsumerState<BeeApp>
     int? categoryId,
     String? page,
   }) {
+    ref.read(startupNavigationHandledProvider.notifier).state = true;
     final nav = Navigator.of(context, rootNavigator: true);
     switch (action) {
       case AppLinkAction.voice:

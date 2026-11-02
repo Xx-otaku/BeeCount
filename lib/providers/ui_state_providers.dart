@@ -23,6 +23,9 @@ import 'security_providers.dart';
 // 底部导航索引（0: 明细, 1: 图表, 2: 账本, 3: 我的）
 final bottomTabIndexProvider = StateProvider<int>((ref) => 0);
 
+// 每个进程只处理一次默认启动导航，解锁或重建主页面时不重复打开。
+final startupNavigationHandledProvider = StateProvider<bool>((ref) => false);
+
 // AppLink 待处理动作（用于通知 UI 层执行导航）
 final pendingAppLinkActionProvider = StateProvider<AppLinkAction?>((ref) => null);
 
