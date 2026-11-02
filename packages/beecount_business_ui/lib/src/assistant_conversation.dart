@@ -12,8 +12,10 @@ class BeeConversationInput extends StatelessWidget {
       required this.stopLabel,
       required this.busy,
       required this.onSend,
-      required this.onStop});
+      required this.onStop,
+      this.focusNode});
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final String hint, sendLabel, stopLabel;
   final bool busy;
   final VoidCallback onSend, onStop;
@@ -31,6 +33,7 @@ class BeeConversationInput extends StatelessWidget {
                         label: hint,
                         showLabel: false,
                         controller: controller,
+                        focusNode: focusNode,
                         hint: hint,
                         minLines: 1,
                         maxLines: 4,

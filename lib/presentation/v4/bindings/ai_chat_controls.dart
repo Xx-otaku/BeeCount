@@ -47,15 +47,27 @@ import 'package:beecount/agent/permission/agent_authorization_gate.dart';
 
 /// AI 对话页面
 class AIChatControls extends ConsumerStatefulWidget {
-  const AIChatControls({super.key});
+  const AIChatControls({
+    super.key,
+    this.embedded = false,
+    this.active = true,
+    this.autofocus = false,
+  });
+
+  final bool embedded;
+  final bool active;
+  final bool autofocus;
 
   @override
-  ConsumerState<AIChatControls> createState() => _AIChatControlsState();
+  AIChatControlsState createState() => AIChatControlsState();
 }
 
-class _AIChatControlsState extends ConsumerState<AIChatControls>
+class AIChatControlsState extends ConsumerState<AIChatControls>
     with WidgetsBindingObserver {
   final TextEditingController _inputController = TextEditingController();
+  final FocusNode _inputFocus = FocusNode();
+  Animation<double>? _entryAnimation;
+  AnimationStatusListener? _entryListener;
   final ScrollController _scrollController = ScrollController();
   late final AIChatService _chatService;
   late final AgentConversationScrollCoordinator _chatScrollCoordinator =
@@ -93,6 +105,79 @@ class _AIChatControlsState extends ConsumerState<AIChatControls>
       _validateApiConfig();
     });
     _scrollController.addListener(_handleScroll);
+  }
+
+  @override
+  void didUpdateWidget(covariant AIChatControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.active) {
+      _cancelEntryFocus();
+      _inputFocus.unfocus();
+    } else if (!oldWidget.active) {
+      _focusInputOnEntry();
+    }
+  }
+
+  void _cancelEntryFocus() {
+    final listener = _entryListener;
+    if (listener != null) _entryAnimation?.removeStatusListener(listener);
+    _entryAnimation = null;
+    _entryListener = null;
+  }
+
+  // Only entry/activation requests focus; ordinary rebuilds never reopen IME.
+  void _focusInputOnEntry() {
+    if (!widget.autofocus || !widget.active || _conversationId == null) return;
+    _cancelEntryFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.active) return;
+      final route = ModalRoute.of(context);
+      if (route?.isCurrent != true) return;
+      final animation = route?.animation;
+      if (animation != null && animation.status != AnimationStatus.completed) {
+        _entryAnimation = animation;
+        _entryListener = (status) {
+          if (status == AnimationStatus.completed) _focusInputOnEntry();
+        };
+        animation.addStatusListener(_entryListener!);
+        return;
+      }
+      _inputFocus.requestFocus();
+    });
+  }
+
+  Future<void> showRecordingActions() async {
+    _inputFocus.unfocus();
+    final l = AppLocalizations.of(context);
+    final action = await showBeeSheet<String>(context,
+        title: l.recordingAiTab,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          BeeMenuRow(
+              title: l.aiSettingsTitle,
+              leading: const BeeLineIcon('Settings'),
+              onTap: () => Navigator.pop(context, 'settings')),
+          BeeMenuRow(
+              title: l.agentAssistantSettingsTitle,
+              leading: const BeeLineIcon('SlidersHorizontal'),
+              onTap: () => Navigator.pop(context, 'permissions')),
+          BeeMenuRow(
+              title: l.aiChatClearHistory,
+              leading: const BeeLineIcon('Trash2'),
+              onTap: () => Navigator.pop(context, 'clear')),
+        ]));
+    if (!mounted) return;
+    if (action == 'settings') {
+      await Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => const AISettingsPage()));
+      if (mounted) await _validateApiConfig();
+    } else if (action == 'permissions') {
+      await Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => AgentAssistantSettingsPage(
+              ledgerId: ref.read(currentLedgerIdProvider))));
+    } else if (action == 'clear' && _conversationId != null) {
+      await _showClearHistoryDialog();
+    }
+    if (mounted) _focusInputOnEntry();
   }
 
   /// 处理滚动事件
@@ -170,6 +255,7 @@ class _AIChatControlsState extends ConsumerState<AIChatControls>
 
     if (!mounted) return;
     ref.read(currentConversationIdProvider.notifier).state = _conversationId;
+    _focusInputOnEntry();
   }
 
   @override
@@ -185,6 +271,7 @@ class _AIChatControlsState extends ConsumerState<AIChatControls>
     final l10n = AppLocalizations.of(context);
 
     return AgentChatShell(
+      embedded: widget.embedded,
       title: l10n.aiChatTitle,
       backTooltip: l10n.commonBack,
       permissionsTooltip: l10n.agentAssistantSettingsTitle,
@@ -603,6 +690,7 @@ class _AIChatControlsState extends ConsumerState<AIChatControls>
     final l = AppLocalizations.of(context);
     return BeeConversationInput(
         controller: _inputController,
+        focusNode: _inputFocus,
         hint: l.aiChatInputHint,
         sendLabel: l.v4AIChatSend,
         stopLabel: l.agentRunStop,
@@ -1391,6 +1479,8 @@ class _AIChatControlsState extends ConsumerState<AIChatControls>
 
   @override
   void dispose() {
+    _cancelEntryFocus();
+    _inputFocus.dispose();
     WidgetsBinding.instance.removeObserver(this);
     final runId = _activeAgentRunId;
     if (runId != null) _chatService.cancelAgentRun(runId);

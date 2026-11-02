@@ -9,6 +9,8 @@ import 'package:beecount/data/db.dart';
 import 'package:beecount/data/repositories/local/local_repository.dart';
 import 'package:beecount/l10n/app_localizations.dart';
 import 'package:beecount/pages/transaction/transaction_editor_page.dart';
+import 'package:beecount/presentation/v4/bindings/ai_chat_controls.dart';
+import 'package:beecount/widgets/ai/agent_chat_shell.dart';
 import 'package:beecount/presentation/v4/bindings/recording_category_section.dart';
 import 'package:beecount/providers.dart';
 import 'package:beecount/utils/shared_ledger_picker_filter.dart';
@@ -218,6 +220,93 @@ void main() {
       image.dispose();
     });
   }
+
+  recordingTest(
+      'AI entry uses four tabs, embeds chat and focuses the current IME',
+      (tester) async {
+    await open(tester,
+        page: const TransactionEditorPage(
+            initialKind: 'expense', startWithAi: true));
+    final header = tester.widget<RecordingHeader>(find.byType(RecordingHeader));
+    expect(header.labels, ['AI记账', '支出', '收入', '转账']);
+    expect(header.selectedIndex, 0);
+    expect(tester.widget<AgentChatShell>(find.byType(AgentChatShell)).embedded,
+        isTrue);
+    final input = find.descendant(
+        of: find.byType(BeeConversationInput),
+        matching: find.byType(TextField));
+    expect(tester.widget<TextField>(input).focusNode!.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+    await tester.enterText(input, 'AI unsent draft');
+    await tester.tap(find.text('支出'));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<RecordingHeader>(find.byType(RecordingHeader))
+            .selectedIndex,
+        1);
+    expect(
+        tester
+            .widget<TextField>(find.descendant(
+                of: find.byType(BeeConversationInput, skipOffstage: false),
+                matching: find.byType(TextField, skipOffstage: false),
+                skipOffstage: false))
+            .focusNode!
+            .hasFocus,
+        isFalse);
+    await key(tester, '7');
+    await tester.tap(find.text('AI记账'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(input).controller!.text, 'AI unsent draft');
+    expect(tester.widget<TextField>(input).focusNode!.hasFocus, isTrue);
+    await tester.tap(find.text('支出'));
+    await tester.pumpAndSettle();
+    expect(find.text('7.00'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  recordingTest(
+      'manual entry remains manual; returning to AI does not discard drafts',
+      (tester) async {
+    await open(tester);
+    expect(
+        tester
+            .widget<RecordingHeader>(find.byType(RecordingHeader))
+            .selectedIndex,
+        1);
+    expect(find.byType(AIChatControls), findsNothing);
+    await key(tester, '2');
+    await tester.tap(find.text('AI记账'));
+    await tester.pumpAndSettle();
+    final input = find.descendant(
+        of: find.byType(BeeConversationInput),
+        matching: find.byType(TextField));
+    expect(tester.testTextInput.isVisible, isTrue);
+    tester.testTextInput.hide();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    await tester.tap(find.text('支出'));
+    await tester.pumpAndSettle();
+    expect(find.text('2.00'), findsOneWidget);
+    await tester.tap(find.text('AI记账'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(input).focusNode!.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    expect(find.text('放弃本次记账？'), findsOneWidget);
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('打开记账'));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<RecordingHeader>(find.byType(RecordingHeader))
+            .selectedIndex,
+        1);
+  });
 
   final frozenDesign = jsonDecode(
       File('test/fixtures/v4-recording-design-geometry.json')

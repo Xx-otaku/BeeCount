@@ -1,4 +1,5 @@
 {
+  "recordingAiTab": "AI",
   "@@locale": "en",
   "agentActivityPreparing": "Preparing your answer…",
   "agentActivityAwaitingModel": "Waiting for the model…",

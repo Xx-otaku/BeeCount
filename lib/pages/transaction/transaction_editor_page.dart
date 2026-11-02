@@ -14,6 +14,7 @@ import '../../widgets/ui/ui.dart';
 import '../../widgets/biz/amount_editor_sheet.dart';
 import '../../widgets/transaction/transfer_form.dart';
 import '../../presentation/v4/bindings/recording_category_section.dart';
+import '../../presentation/v4/bindings/ai_chat_controls.dart';
 import '../../presentation/v4/bindings/recording_save.dart';
 
 /// 交易编辑器页面
@@ -23,6 +24,7 @@ class TransactionEditorPage extends ConsumerStatefulWidget {
   final String initialKind; // 'expense', 'income', or 'transfer'
   // Retained for existing callers; recording now opens the full editor.
   final bool quickAdd;
+  final bool startWithAi;
 
   final int? initialCategoryId;
   final String? initialNote; // 用于金额输入弹窗回填备注
@@ -43,6 +45,7 @@ class TransactionEditorPage extends ConsumerStatefulWidget {
     this.isCopy = false,
     required this.initialKind,
     this.quickAdd = false,
+    this.startWithAi = false,
     this.initialCategoryId,
     this.initialNote,
     this.initialAmount,
@@ -93,6 +96,9 @@ class TransactionEditorPage extends ConsumerStatefulWidget {
 
 class _TransactionEditorPageState extends ConsumerState<TransactionEditorPage> {
   late int _selectedType;
+  late bool _showAi;
+  late bool _aiVisited;
+  final _aiKey = GlobalKey<AIChatControlsState>();
   Category? _cardCategory;
   GlobalKey<AmountEditorSheetState> _cardEditorKey =
       GlobalKey<AmountEditorSheetState>();
@@ -110,6 +116,10 @@ class _TransactionEditorPageState extends ConsumerState<TransactionEditorPage> {
   @override
   void initState() {
     super.initState();
+    _showAi = widget.startWithAi &&
+        widget.editingTransactionId == null &&
+        !widget.isCopy;
+    _aiVisited = _showAi;
     _cardInitialDate = widget.initialDate ?? DateTime.now();
     _selectedType = widget.initialKind == 'income'
         ? 1
@@ -162,6 +172,94 @@ class _TransactionEditorPageState extends ConsumerState<TransactionEditorPage> {
         : _selectedType == 2
             ? 'transfer'
             : 'expense';
+    final manualEditor = _cardInitFailed
+        ? Center(
+            child: TextButton(
+                onPressed: _initializeCardEditor,
+                child: Text(l10n.v4RecordingRetry)))
+        : !_cardReady
+            ? const Center(child: CircularProgressIndicator())
+            : kind == 'transfer'
+                ? TransferForm(
+                    key: _transferEditorKey,
+                    systemKeyboardVisible:
+                        MediaQuery.viewInsetsOf(context).bottom >
+                            kMinInteractiveDimension,
+                    onSavingChanged: (saving) {
+                      if (mounted) {
+                        setState(() => _cardSaving = saving);
+                      }
+                    },
+                    onTransferComplete: () => Navigator.pop(context),
+                    initialFromAccountId: widget.initialAccountId,
+                    initialToAccountId: widget.initialToAccountId,
+                    editingTransactionId: widget.editingTransactionId,
+                    initialAmount: widget.initialAmount,
+                    initialNote: widget.initialNote,
+                    initialDate: widget.initialDate,
+                    initialTagIds: widget.initialTagIds,
+                    initialExcludeFromStats: widget.initialExcludeFromStats,
+                    initialExcludeFromBudget: widget.initialExcludeFromBudget,
+                    initialCurrencyCode: widget.initialCurrencyCode,
+                    initialNativeAmount: widget.initialNativeAmount,
+                  )
+                : AmountEditorSheet(
+                    key: _cardEditorKey,
+                    cardLayout: true,
+                    systemKeyboardVisible:
+                        // Some floating/minimized IMEs report a
+                        // 1px inset without covering the editor.
+                        MediaQuery.viewInsetsOf(context).bottom >
+                            kMinInteractiveDimension,
+                    categoryName: _cardCategory?.name ?? '',
+                    categoryId: _cardCategory?.id,
+                    categorySyncId: (_cardCategory?.id ?? 0) < 0
+                        ? _cardCategory?.syncId
+                        : null,
+                    categorySection: RecordingCategorySection(
+                        ledgerId: _cardLedgerId,
+                        kind: kind,
+                        selectedId: _cardCategory?.id,
+                        onSelected: (category) => setState(() {
+                              _cardCategory = category;
+                              _cardDirty = true;
+                            })),
+                    canSubmit: _cardCategory != null,
+                    onLedgerChanged:
+                        widget.editingTransactionId == null && !widget.isCopy
+                            ? _changeCardLedger
+                            : null,
+                    externalDraftChanged: _cardDirty,
+                    initialDate: _cardInitialDate,
+                    initialAmount: _cardReset ? null : widget.initialAmount,
+                    initialNote: _cardReset ? null : widget.initialNote,
+                    initialAccountId: _cardInitialAccountId,
+                    initialTagIds: _cardReset ? null : widget.initialTagIds,
+                    showAccountPicker: true,
+                    ledgerId: _cardLedgerId,
+                    editingTransactionId: widget.editingTransactionId,
+                    transactionKind: kind,
+                    initialExcludeFromStats: widget.initialExcludeFromStats,
+                    initialExcludeFromBudget: widget.initialExcludeFromBudget,
+                    initialCurrencyCode:
+                        _cardReset ? null : widget.initialCurrencyCode,
+                    initialNativeAmount:
+                        _cardReset ? null : widget.initialNativeAmount,
+                    allowContinueAdding:
+                        !widget.isCopy && widget.editingTransactionId == null,
+                    onSubmit: (result) async {
+                      final category = _cardCategory;
+                      if (category == null || _cardSaving) return;
+                      setState(() => _cardSaving = true);
+                      try {
+                        await _saveTransaction(category, kind, result,
+                            targetLedgerId: _cardLedgerId);
+                      } finally {
+                        if (mounted) {
+                          setState(() => _cardSaving = false);
+                        }
+                      }
+                    });
     return Theme(
       data: theme.copyWith(
           textButtonTheme: TextButtonThemeData(
@@ -197,122 +295,50 @@ class _TransactionEditorPageState extends ConsumerState<TransactionEditorPage> {
                       ? (MediaQuery.sizeOf(context).width <= 340 ? 44 : 46)
                       : 50,
                   labels: [
+                    l10n.recordingAiTab,
                     l10n.categoryExpense,
                     l10n.categoryIncome,
                     l10n.transferTitle
                   ],
-                  selectedIndex: _selectedType,
+                  selectedIndex: _showAi ? 0 : _selectedType + 1,
                   backLabel: l10n.commonBack,
                   onBack: () => Navigator.maybePop(context),
                   moreLabel: l10n.txFlagMoreOptions,
-                  onMore: kind == 'transfer'
-                      ? null
-                      : () =>
-                          _cardEditorKey.currentState?.showRecordingOptions(),
-                  onChanged: _changeType),
+                  onMore: _showAi
+                      ? () => _aiKey.currentState?.showRecordingActions()
+                      : kind == 'transfer'
+                          ? null
+                          : () => _cardEditorKey.currentState
+                              ?.showRecordingOptions(),
+                  onChanged: _changeMode),
               Expanded(
-                child: _cardInitFailed
-                    ? Center(
-                        child: TextButton(
-                            onPressed: _initializeCardEditor,
-                            child: Text(l10n.v4RecordingRetry)))
-                    : !_cardReady
-                        ? const Center(child: CircularProgressIndicator())
-                        : kind == 'transfer'
-                            ? TransferForm(
-                                key: _transferEditorKey,
-                                systemKeyboardVisible:
-                                    MediaQuery.viewInsetsOf(context).bottom >
-                                        kMinInteractiveDimension,
-                                onSavingChanged: (saving) {
-                                  if (mounted) {
-                                    setState(() => _cardSaving = saving);
-                                  }
-                                },
-                                onTransferComplete: () =>
-                                    Navigator.pop(context),
-                                initialFromAccountId: widget.initialAccountId,
-                                initialToAccountId: widget.initialToAccountId,
-                                editingTransactionId:
-                                    widget.editingTransactionId,
-                                initialAmount: widget.initialAmount,
-                                initialNote: widget.initialNote,
-                                initialDate: widget.initialDate,
-                                initialTagIds: widget.initialTagIds,
-                                initialExcludeFromStats:
-                                    widget.initialExcludeFromStats,
-                                initialExcludeFromBudget:
-                                    widget.initialExcludeFromBudget,
-                                initialCurrencyCode: widget.initialCurrencyCode,
-                                initialNativeAmount: widget.initialNativeAmount,
-                              )
-                            : AmountEditorSheet(
-                                key: _cardEditorKey,
-                                cardLayout: true,
-                                systemKeyboardVisible:
-                                    // Some floating/minimized IMEs report a
-                                    // 1px inset without covering the editor.
-                                    MediaQuery.viewInsetsOf(context).bottom >
-                                        kMinInteractiveDimension,
-                                categoryName: _cardCategory?.name ?? '',
-                                categoryId: _cardCategory?.id,
-                                categorySyncId: (_cardCategory?.id ?? 0) < 0
-                                    ? _cardCategory?.syncId
-                                    : null,
-                                categorySection: RecordingCategorySection(
-                                    ledgerId: _cardLedgerId,
-                                    kind: kind,
-                                    selectedId: _cardCategory?.id,
-                                    onSelected: (category) => setState(() {
-                                          _cardCategory = category;
-                                          _cardDirty = true;
-                                        })),
-                                canSubmit: _cardCategory != null,
-                                onLedgerChanged:
-                                    widget.editingTransactionId == null &&
-                                            !widget.isCopy
-                                        ? _changeCardLedger
-                                        : null,
-                                externalDraftChanged: _cardDirty,
-                                initialDate: _cardInitialDate,
-                                initialAmount:
-                                    _cardReset ? null : widget.initialAmount,
-                                initialNote:
-                                    _cardReset ? null : widget.initialNote,
-                                initialAccountId: _cardInitialAccountId,
-                                initialTagIds:
-                                    _cardReset ? null : widget.initialTagIds,
-                                showAccountPicker: true,
-                                ledgerId: _cardLedgerId,
-                                editingTransactionId:
-                                    widget.editingTransactionId,
-                                transactionKind: kind,
-                                initialExcludeFromStats:
-                                    widget.initialExcludeFromStats,
-                                initialExcludeFromBudget:
-                                    widget.initialExcludeFromBudget,
-                                initialCurrencyCode: _cardReset
-                                    ? null
-                                    : widget.initialCurrencyCode,
-                                initialNativeAmount: _cardReset
-                                    ? null
-                                    : widget.initialNativeAmount,
-                                allowContinueAdding: !widget.isCopy &&
-                                    widget.editingTransactionId == null,
-                                onSubmit: (result) async {
-                                  final category = _cardCategory;
-                                  if (category == null || _cardSaving) return;
-                                  setState(() => _cardSaving = true);
-                                  try {
-                                    await _saveTransaction(
-                                        category, kind, result,
-                                        targetLedgerId: _cardLedgerId);
-                                  } finally {
-                                    if (mounted) {
-                                      setState(() => _cardSaving = false);
-                                    }
-                                  }
-                                }),
+                child: IndexedStack(
+                  index: _showAi ? 0 : 1,
+                  children: [
+                    if (_aiVisited)
+                      TickerMode(
+                        enabled: _showAi,
+                        child: ExcludeFocus(
+                          excluding: !_showAi,
+                          child: AIChatControls(
+                            key: _aiKey,
+                            embedded: true,
+                            active: _showAi,
+                            autofocus: true,
+                          ),
+                        ),
+                      )
+                    else
+                      const SizedBox.shrink(),
+                    TickerMode(
+                      enabled: !_showAi,
+                      child: ExcludeFocus(
+                        excluding: _showAi,
+                        child: manualEditor,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ]),
           ))),
@@ -334,6 +360,25 @@ class _TransactionEditorPageState extends ConsumerState<TransactionEditorPage> {
       _retryTransactionId = null;
       _cardEditorKey = GlobalKey<AmountEditorSheetState>();
     });
+  }
+
+  Future<void> _changeMode(int index) async {
+    if (_cardSaving) return;
+    if (index == 0) {
+      if (_showAi) return;
+      FocusScope.of(context).unfocus();
+      setState(() {
+        _aiVisited = true;
+        _showAi = true;
+      });
+      return;
+    }
+    final type = index - 1;
+    if (!_showAi && _selectedType == type) return;
+    await _changeType(type);
+    if (!mounted || _selectedType != type) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _showAi = false);
   }
 
   Future<void> _changeType(int index) async {

@@ -13,7 +13,7 @@ class RecordingHeader extends StatelessWidget {
       this.moreLabel,
       this.onMore,
       this.height = 50})
-      : assert(labels.length == 3);
+      : assert(labels.length == 3 || labels.length == 4);
 
   final List<String> labels;
   final int selectedIndex;
@@ -37,7 +37,8 @@ class RecordingHeader extends StatelessWidget {
             Expanded(
                 child: Center(
                     child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 240),
+                        constraints: BoxConstraints(
+                            maxWidth: labels.length == 4 ? 320 : 240),
                         child: BeeSegmented<int>(
                             dense: true,
                             items: [

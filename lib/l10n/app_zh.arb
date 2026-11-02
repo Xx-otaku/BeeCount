@@ -1,4 +1,5 @@
 {
+  "recordingAiTab": "AI记账",
   "@@locale": "zh",
   "agentActivityPreparing": "正在处理你的问题…",
   "agentActivityAwaitingModel": "正在等待模型响应…",

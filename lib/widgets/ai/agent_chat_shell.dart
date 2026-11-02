@@ -17,6 +17,7 @@ class AgentChatShell extends StatelessWidget {
     this.backTooltip,
     this.permissionsTooltip,
     this.clearTooltip,
+    this.embedded = false,
   });
 
   final String title;
@@ -27,37 +28,41 @@ class AgentChatShell extends StatelessWidget {
   final String? backTooltip;
   final String? permissionsTooltip;
   final String? clearTooltip;
+  final bool embedded;
 
   @override
-  Widget build(BuildContext context) => V4PageScaffold(
+  Widget build(BuildContext context) => embedded
+      ? child
+      : V4PageScaffold(
           body: Column(children: [
-        BeePageHeader(
-            title: title,
-            leading: SizedBox.square(
-                dimension: 44,
-                child: BeeIconButton(
-                    key: const ValueKey('agent-chat-back'),
-                    label: backTooltip ??
-                        MaterialLocalizations.of(context).backButtonTooltip,
-                    icon: const BeeLineIcon('ChevronLeft'),
-                    onPressed: onBack)),
-            actions: [
-              SizedBox.square(
+          BeePageHeader(
+              title: title,
+              leading: SizedBox.square(
                   dimension: 44,
                   child: BeeIconButton(
-                      key: const ValueKey('agent-chat-permissions'),
-                      label: permissionsTooltip ?? title,
-                      icon: const BeeLineIcon('SlidersHorizontal'),
-                      onPressed: onOpenPermissions)),
-              SizedBox.square(
-                  dimension: 44,
-                  child: BeeIconButton(
-                      key: const ValueKey('agent-chat-clear'),
-                      label: clearTooltip ??
-                          MaterialLocalizations.of(context).deleteButtonTooltip,
-                      icon: const BeeLineIcon('Trash2'),
-                      onPressed: onClearHistory))
-            ]),
-        Expanded(child: child)
-      ]));
+                      key: const ValueKey('agent-chat-back'),
+                      label: backTooltip ??
+                          MaterialLocalizations.of(context).backButtonTooltip,
+                      icon: const BeeLineIcon('ChevronLeft'),
+                      onPressed: onBack)),
+              actions: [
+                SizedBox.square(
+                    dimension: 44,
+                    child: BeeIconButton(
+                        key: const ValueKey('agent-chat-permissions'),
+                        label: permissionsTooltip ?? title,
+                        icon: const BeeLineIcon('SlidersHorizontal'),
+                        onPressed: onOpenPermissions)),
+                SizedBox.square(
+                    dimension: 44,
+                    child: BeeIconButton(
+                        key: const ValueKey('agent-chat-clear'),
+                        label: clearTooltip ??
+                            MaterialLocalizations.of(context)
+                                .deleteButtonTooltip,
+                        icon: const BeeLineIcon('Trash2'),
+                        onPressed: onClearHistory))
+              ]),
+          Expanded(child: child)
+        ]));
 }

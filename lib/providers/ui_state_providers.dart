@@ -26,6 +26,9 @@ export '../models/home_transaction_preview.dart' show TransactionDisplayItem;
 // 底部导航索引（0: 明细, 1: 图表, 2: 账本, 3: 我的）
 final bottomTabIndexProvider = StateProvider<int>((ref) => 0);
 
+// Keep default launch navigation once per process, including lock-screen rebuilds.
+final startupNavigationHandledProvider = StateProvider<bool>((ref) => false);
+
 // AppLink 待处理动作（用于通知 UI 层执行导航）
 final pendingAppLinkActionProvider =
     StateProvider<AppLinkAction?>((ref) => null);

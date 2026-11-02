@@ -98,6 +98,12 @@ abstract class AppLocalizations {
     Locale('zh', 'TW')
   ];
 
+  /// No description provided for @recordingAiTab.
+  ///
+  /// In en, this message translates to:
+  /// **'AI'**
+  String get recordingAiTab;
+
   /// No description provided for @agentActivityPreparing.
   ///
   /// In en, this message translates to:

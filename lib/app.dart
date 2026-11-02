@@ -104,9 +104,27 @@ class _BeeAppState extends ConsumerState<BeeApp>
     _refreshLedgersStatusInBackground();
     // 延迟监听 AppLink，确保 context 可用
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _setupAppLinkListener();
       _setupQuickActions();
+      _drainPendingDeepLink(trigger: 'startup');
     });
+  }
+
+  void _openStartupRecording() {
+    if (!mounted ||
+        ref.read(startupNavigationHandledProvider) ||
+        ref.read(appInitStateProvider) != AppInitState.ready ||
+        ref.read(shouldShowWelcomeProvider) ||
+        ref.read(isAppLockedProvider) ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    ref.read(startupNavigationHandledProvider.notifier).state = true;
+    if (ModalRoute.of(context)?.isCurrent != true) return;
+    Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
+        builder: (_) => const TransactionEditorPage(
+            initialKind: 'expense', quickAdd: true, startWithAi: true)));
   }
 
   /// 设置快捷操作
@@ -471,13 +489,17 @@ class _BeeAppState extends ConsumerState<BeeApp>
     }
     if (!mounted) return;
     final raw = prefs.getString(_kPendingDeepLink);
-    if (raw == null) return;
+    if (raw == null) {
+      _openStartupRecording();
+      return;
+    }
 
     Map<String, dynamic> data;
     try {
       data = jsonDecode(raw) as Map<String, dynamic>;
     } catch (_) {
       await prefs.remove(_kPendingDeepLink);
+      _openStartupRecording();
       return;
     }
     final ts = (data['ts'] as num?)?.toInt() ?? 0;
@@ -485,6 +507,7 @@ class _BeeAppState extends ConsumerState<BeeApp>
     // 过期(>20s)或时间异常 → 丢弃,避免历史深链在普通启动时误触发
     if (ageMs < 0 || ageMs > 20000) {
       await prefs.remove(_kPendingDeepLink);
+      _openStartupRecording();
       return;
     }
     // 同一条只认领一次(listener / resumed 多次触发去重)
@@ -500,6 +523,7 @@ class _BeeAppState extends ConsumerState<BeeApp>
     }
     if (action == null) {
       await prefs.remove(_kPendingDeepLink);
+      _openStartupRecording();
       return;
     }
 
@@ -527,6 +551,7 @@ class _BeeAppState extends ConsumerState<BeeApp>
     int? categoryId,
     String? page,
   }) {
+    ref.read(startupNavigationHandledProvider.notifier).state = true;
     final nav = Navigator.of(context, rootNavigator: true);
     switch (action) {
       case AppLinkAction.voice:
@@ -858,6 +883,7 @@ class _BeeAppState extends ConsumerState<BeeApp>
                     builder: (_) => const TransactionEditorPage(
                       initialKind: 'expense',
                       quickAdd: true,
+                      startWithAi: true,
                     ),
                   ),
                 );

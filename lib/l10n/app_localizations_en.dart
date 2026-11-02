@@ -9,6 +9,9 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get recordingAiTab => 'AI';
+
+  @override
   String get agentActivityPreparing => 'Preparing your answer…';
 
   @override
